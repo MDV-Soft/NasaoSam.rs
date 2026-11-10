@@ -1,5 +1,6 @@
 package org.example.nasaosam.auth.service;
 
+import org.example.nasaosam.common.security.PhoneNumberNormalizer;
 import org.springframework.transaction.annotation.Transactional;
 import org.example.nasaosam.auth.dto.LoginRequest;
 import org.example.nasaosam.auth.dto.RegisterRequest;
@@ -24,10 +25,14 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    private final PhoneNumberNormalizer phoneNumberNormalizer;
+
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                       JwtService jwtService, PhoneNumberNormalizer phoneNumberNormalizer) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.phoneNumberNormalizer = phoneNumberNormalizer;
     }
 
     private String normalizeEmail(String email){
@@ -41,6 +46,9 @@ public class AuthService {
         User newUser;
         User savedUser;
         String token;
+        String normalizedPhone;
+
+        normalizedPhone = phoneNumberNormalizer.normalize(registerRequest.phone());
 
         normalizedEmail = normalizeEmail(registerRequest.email());
 
@@ -50,6 +58,7 @@ public class AuthService {
 
         passwordHash = passwordEncoder.encode(registerRequest.password());
         newUser = new User(normalizedEmail, passwordHash, registerRequest.displayName(), Role.OWNER);
+        newUser.setPhone(normalizedPhone);
         savedUser = userRepository.save(newUser);
 
         token = jwtService.createToken(savedUser);

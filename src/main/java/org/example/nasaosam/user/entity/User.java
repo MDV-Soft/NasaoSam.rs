@@ -2,6 +2,7 @@ package org.example.nasaosam.user.entity;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Size;
+import org.example.nasaosam.common.security.EncryptedStringConverter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -37,6 +38,11 @@ public class User {
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    // Šifrovan AES-om; null kod naloga napravljenih pre V3
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "phone", columnDefinition = "TEXT")
+    private String phone;
 
 
     public User() {
@@ -124,5 +130,13 @@ public class User {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
     }
 }

@@ -18,6 +18,7 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> {
             auth.requestMatchers("/actuator/health").permitAll();
             auth.requestMatchers("/api/auth/register",  "/api/auth/login").permitAll();
+            auth.requestMatchers("/api/meta/**").permitAll();
             auth.requestMatchers("/error").permitAll();
             auth.requestMatchers("/api/lost-reports/**").hasRole("OWNER");
             auth.anyRequest().authenticated();
