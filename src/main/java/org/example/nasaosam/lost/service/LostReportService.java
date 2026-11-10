@@ -89,6 +89,13 @@ public class LostReportService {
             validateItem(itemRequests.get(index), index +1);
         }
 
+        // Nov oglas nema postojece predmete, pa ni jedan predmet ne sme da nosi ID
+        for (int index = 0; index < itemRequests.size(); index++) {
+            if (itemRequests.get(index).id() != null) {
+                throw badRequest("Predmet " + (index + 1) + ": nov oglas ne može sadržati ID predmeta");
+            }
+        }
+
         foundOwner = userRepository.findById(ownerId);
         if(foundOwner.isEmpty()){
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, " KORISNIK NE POSTOJI! ");
@@ -119,6 +126,55 @@ public class LostReportService {
         savedReport = lostReportRepository.save(report);
 
         return toResponse(savedReport);
+    }
+
+    @Transactional
+    public LostReportResponse update(Long ownerId, Long reportId, CreateLostReportRequest req){
+        LostReport report;
+        List<LostReportItemRequest> itemRequests;
+        report = findOwnedReport(ownerId, reportId);
+        itemRequests = req.items();
+
+        if(!report.isActive()){
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Moze samo da se menja aktivn oglas");
+        }
+
+        validateReportFields(req, Instant.now());
+        validateItems(itemRequests);
+        validateItemIds(report, itemRequests);
+
+        report.setLostFrom(req.lostFrom());
+        report.setLostTo(req.lostTo());
+        report.setCity(req.city().trim());
+        applyReportFields(report, req);
+
+        // Predmeti
+        syncItems(report, itemRequests);
+
+        // Ocena se racuna ponovo jer su se polja promenila
+        report.setCompletenessScore(completenessScoreCalculator.calculate(report));
+
+        lostReportRepository.flush();
+
+        // BUDUCE: ovde ide objavljivanje dogadjaja "oglas izmenjen" za ponovno spajanje.
+        return toResponse(report);
+    }
+
+    // ZATAVARANJE OGLASA
+    @Transactional
+    public LostReportResponse close(Long ownerId, Long reportId) {
+        LostReport report;
+
+        report = findOwnedReport(ownerId, reportId);
+        if (!report.isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Oglas je već zatvoren");
+        }
+
+        report.close();
+        lostReportRepository.flush();
+
+        // BUDUCE: ovde se ponistavaju otvorena poklapanja za ovaj oglas.
+        return toResponse(report);
     }
 
     /*
@@ -180,6 +236,138 @@ public class LostReportService {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 
+
+    // Provere polja oglasa, zajednicke za pravljenje i izmenu
+    private void validateReportFields(CreateLostReportRequest request, Instant now) {
+        validateTimeRange(request.lostFrom(), request.lostTo(), now);
+        validateCoordinates(request);
+    }
+
+    // Provera svakog predmeta po pravilima koja zavise od vrste
+    private void validateItems(List<LostReportItemRequest> itemRequests) {
+        for (int index = 0; index < itemRequests.size(); index++) {
+            validateItem(itemRequests.get(index), index + 1);
+        }
+    }
+
+    /**
+     * Kod izmene: svaki poslat ID predmeta mora pripadati baš ovom oglasu,
+     * i isti ID ne sme da se pojavi dva puta.
+     *
+     * Bez ove provere korisnik bi mogao da pošalje ID predmeta iz tuđeg oglasa.
+     */
+    private void validateItemIds(LostReport report, List<LostReportItemRequest> itemRequests) {
+        List<Long> seenIds;
+        Long itemId;
+
+        seenIds = new ArrayList<>();
+        for (int index = 0; index < itemRequests.size(); index++) {
+            itemId = itemRequests.get(index).id();
+            if (itemId == null) {
+                continue;
+            }
+            if (findItemById(report, itemId) == null) {
+                throw badRequest("Predmet " + (index + 1) + ": predmet ne pripada ovom oglasu");
+            }
+            if (seenIds.contains(itemId)) {
+                throw badRequest("Predmet " + (index + 1) + ": isti predmet je naveden više puta");
+            }
+            seenIds.add(itemId);
+        }
+    }
+    // Neobavezna polja oglasa, ista za pravljenje i izmenu
+    private void applyReportFields(LostReport report, CreateLostReportRequest request) {
+        report.setPlaceDescription(trimToNull(request.placeDescription()));
+        report.setLatitude(request.latitude());
+        report.setLongitude(request.longitude());
+        report.setLocationRadiusMeters(request.locationRadiusMeters());
+        // @Convert u entitetu: Hibernate ovo šifruje AES-om pri upisu
+        report.setPrivateDetails(trimToNull(request.privateDetails()));
+    }
+    /**
+     * Usklađuje predmete oglasa sa listom iz zahteva (vidi opis metode update).
+     *
+     * Brisanje ide preko posebne liste: elementi se ne smeju brisati iz liste
+     * kroz koju se upravo prolazi petljom, jer bi se preskočio sledeći element.
+     */
+    private void syncItems(LostReport report, List<LostReportItemRequest> itemRequests) {
+        List<Long> requestedIds;
+        List<LostReportItem> itemsToRemove;
+        List<LostReportItem> currentItems;
+        LostReportItemRequest itemRequest;
+        LostReportItem existingItem;
+
+        // 1. ID-jevi predmeta koji ostaju
+        requestedIds = new ArrayList<>();
+        for (int index = 0; index < itemRequests.size(); index++) {
+            if (itemRequests.get(index).id() != null) {
+                requestedIds.add(itemRequests.get(index).id());
+            }
+        }
+
+        // 2. Postojeći predmeti kojih nema u zahtevu idu na brisanje
+        itemsToRemove = new ArrayList<>();
+        currentItems = report.getItems();
+        for (int index = 0; index < currentItems.size(); index++) {
+            if (!requestedIds.contains(currentItems.get(index).getId())) {
+                itemsToRemove.add(currentItems.get(index));
+            }
+        }
+        for (int index = 0; index < itemsToRemove.size(); index++) {
+            report.removeItem(itemsToRemove.get(index));
+        }
+
+        // 3. Izmena postojećih i dodavanje novih
+        for (int index = 0; index < itemRequests.size(); index++) {
+            itemRequest = itemRequests.get(index);
+            if (itemRequest.id() == null) {
+                report.addItem(buildItem(itemRequest));
+            } else {
+                existingItem = findItemById(report, itemRequest.id());
+                applyItemFields(existingItem, itemRequest);
+            }
+        }
+    }
+
+    private void applyItemFields(LostReportItem item, LostReportItemRequest request) {
+        item.setCategory(request.category());
+        item.setCustomCategory(trimToNull(request.customCategory()));
+        item.setDocumentType(request.documentType());
+        item.setColor(request.color());
+        item.setBrand(trimToNull(request.brand()));
+        item.setMaterial(trimToNull(request.material()));
+        item.setDescription(trimToNull(request.description()));
+        item.setDistinctiveMarks(trimToNull(request.distinctiveMarks()));
+
+        if (request.category() != ItemCategory.DOCUMENT) {
+            item.setNameHash(null);
+            item.setNameDobHash(null);
+            return;
+        }
+
+        if (request.nameHash() != null) {
+            item.setNameHash(hmacService.hashClientHash(request.nameHash()));
+        }
+        if (request.nameDobHash() != null) {
+            item.setNameDobHash(hmacService.hashClientHash(request.nameDobHash()));
+        }
+        if (request.documentType() == DocumentType.BANK_CARD) {
+            item.setNameDobHash(null);
+        }
+    }
+
+
+    private LostReportItem findItemById(LostReport report, Long itemId) {
+        List<LostReportItem> items;
+
+        items = report.getItems();
+        for (int index = 0; index < items.size(); index++) {
+            if (itemId.equals(items.get(index).getId())) {
+                return items.get(index);
+            }
+        }
+        return null;
+    }
 
     /*
     * Proverava jedan premdet po pravilima po vrsti predmeta

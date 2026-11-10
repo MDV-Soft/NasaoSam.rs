@@ -19,6 +19,7 @@ public class SecurityConfig {
             auth.requestMatchers("/actuator/health").permitAll();
             auth.requestMatchers("/api/auth/register",  "/api/auth/login").permitAll();
             auth.requestMatchers("/error").permitAll();
+            auth.requestMatchers("/api/lost-reports/**").hasRole("OWNER");
             auth.anyRequest().authenticated();
         });
         http.oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));

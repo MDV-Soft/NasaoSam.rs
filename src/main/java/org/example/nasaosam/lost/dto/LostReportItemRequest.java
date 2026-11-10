@@ -36,6 +36,8 @@ public record LostReportItemRequest(
 
         String nameHash,
 
-        String nameDobHash
+        String nameDobHash,
+
+        Long id
 ) {
 }
