@@ -47,4 +47,11 @@ public class AuthController {
         result.put("role", jwt.getClaimAsString("role"));
         return result;
     }
+
+    // Nema tela: token se čita iz zaglavlja. 204 = uspelo, a nema šta da se vrati
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@AuthenticationPrincipal Jwt jwt) {
+        authService.logout(jwt);
+        return ResponseEntity.noContent().build();
+    }
 }

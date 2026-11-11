@@ -1,6 +1,7 @@
 package org.example.nasaosam.auth.service;
 
 import org.example.nasaosam.common.security.PhoneNumberNormalizer;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 import org.example.nasaosam.auth.dto.LoginRequest;
 import org.example.nasaosam.auth.dto.RegisterRequest;
@@ -26,13 +27,15 @@ public class AuthService {
     private final JwtService jwtService;
 
     private final PhoneNumberNormalizer phoneNumberNormalizer;
+    private final RevokedTokenService revokedTokenService;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                       JwtService jwtService, PhoneNumberNormalizer phoneNumberNormalizer) {
+                       JwtService jwtService, PhoneNumberNormalizer phoneNumberNormalizer, RevokedTokenService revokedTokenService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.phoneNumberNormalizer = phoneNumberNormalizer;
+        this.revokedTokenService = revokedTokenService;
     }
 
     private String normalizeEmail(String email){
@@ -91,5 +94,11 @@ public class AuthService {
 
         token = jwtService.createToken(user);
         return new AuthResponse(token, user.getId(), user.getEmail(), user.getRole().name());
+    }
+
+    //LOGOUT
+    // Odjava: ID i vreme isteka tokena iz kog je zahtev stigao idu u spisak opozvanih
+    public void logout(Jwt jwt) {
+        revokedTokenService.revoke(jwt.getId(), jwt.getExpiresAt());
     }
 }
