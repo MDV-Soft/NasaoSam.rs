@@ -24,7 +24,9 @@ public class SecurityConfig {
             auth.requestMatchers("/api/meta/**").permitAll();
             auth.requestMatchers("/error").permitAll();
             auth.requestMatchers("/api/lost-reports/**").hasRole("OWNER");
-            auth.requestMatchers(HttpMethod.POST, "/api/found-reports").permitAll();
+            auth.requestMatchers(HttpMethod.POST, "/api/found-reports", "/api/finder/access").permitAll();
+            auth.requestMatchers("/api/finder/**").hasRole("FINDER");
+            auth.requestMatchers("/api/lost-reports/**").hasRole("OWNER");
             auth.anyRequest().authenticated();
         });
         http.oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
