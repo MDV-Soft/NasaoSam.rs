@@ -2,6 +2,7 @@ package org.example.nasaosam.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -23,6 +24,7 @@ public class SecurityConfig {
             auth.requestMatchers("/api/meta/**").permitAll();
             auth.requestMatchers("/error").permitAll();
             auth.requestMatchers("/api/lost-reports/**").hasRole("OWNER");
+            auth.requestMatchers(HttpMethod.POST, "/api/found-reports").permitAll();
             auth.anyRequest().authenticated();
         });
         http.oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
